@@ -44,12 +44,12 @@ async def test_impulse_response(dut):
     pass_count = 0
     
     # Apply impulse at x[0] and then zeros
+    dut.x_in.value = impulse_value
+    await FallingEdge(dut.clk)
+    dut.x_in.value = 0
+    await FallingEdge(dut.clk)
+
     for i in range(16):
-        # Set input before waiting (matches Verilog TB)
-        if i == 0:
-            dut.x_in.value = impulse_value
-        else:
-            dut.x_in.value = 0
         
         # Wait for clock edge (DUT samples x_in)
         await FallingEdge(dut.clk)
@@ -132,9 +132,10 @@ def test_fir_filter_dec2_runner():
         sources=sources,
         hdl_toplevel="fir_filter_dec2",
         always=True,
+        waves=True
     )
     
-    runner.test(hdl_toplevel="fir_filter_dec2", test_module="test_fir_filter_dec2")
+    runner.test(hdl_toplevel="fir_filter_dec2", test_module="test_fir_filter_dec2", waves=True)
 
 
 if __name__ == "__main__":
