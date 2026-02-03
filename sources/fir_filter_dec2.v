@@ -26,18 +26,18 @@ module fir_filter_dec2 (
     parameter signed [7:0] H15 = 8'sd4;
 
     // =========================================================================
-    // Polyphase FIR Filter with Decimation by 2
+    // Area-Efficient Polyphase FIR Filter with Decimation by 2
+    // Using Time-Domain Multiplexing
     // =========================================================================
     // 
-    // Using polyphase decomposition, the filter output y[2n+1] is computed as:
+    // The filter output y[2n+1] is computed as:
     //   y[2n+1] = P_odd(n) + P_even(n)
     //
-    // Where:
-    //   P_odd(n)  = h[0]*x_o[n] + h[2]*x_o[n-1] + ... + h[14]*x_o[n-7]
-    //   P_even(n) = h[1]*x_e[n] + h[3]*x_e[n-1] + ... + h[15]*x_e[n-7]
+    // Time-domain multiplexing reuses 8 multipliers:
+    //   Phase 0 (even input): Compute P_even with odd coefficients (H1,H3,...)
+    //   Phase 1 (odd input):  Compute P_odd with even coefficients (H0,H2,...)
     //
-    // x_o = odd samples {x[1], x[3], x[5], ...}
-    // x_e = even samples {x[0], x[2], x[4], ...}
+    // This saves 8 multipliers compared to parallel implementation.
     // =========================================================================
 
     // Phase counter: 0 = receiving even sample, 1 = receiving odd sample
@@ -47,11 +47,8 @@ module fir_filter_dec2 (
     reg signed [7:0] x_odd  [0:7];  // Odd input samples
     reg signed [7:0] x_even [0:7];  // Even input samples
     
-    // Clock divider output - enables computation after odd sample captured
-    reg clk_div_en;
-    
-    // Gated clock from ICG for output register
-    wire clk_gated;
+    // Registered partial sum from phase 0 (P_even)
+    reg signed [18:0] p_even_reg;
     
     // -------------------------------------------------------------------------
     // Phase Counter - alternates between 0 (even) and 1 (odd)
@@ -61,17 +58,6 @@ module fir_filter_dec2 (
             phase <= 1'b0;
         else
             phase <= ~phase;
-    end
-    
-    // -------------------------------------------------------------------------
-    // Clock Divider Enable - generates enable signal at half input rate
-    // Enable is high one cycle after odd sample is captured
-    // -------------------------------------------------------------------------
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            clk_div_en <= 1'b0;
-        else
-            clk_div_en <= phase;  // High after odd sample captured
     end
     
     // -------------------------------------------------------------------------
@@ -102,71 +88,79 @@ module fir_filter_dec2 (
     end
     
     // -------------------------------------------------------------------------
-    // Polyphase Filter Computation (Combinational)
-    // P_odd: Even-indexed coefficients (H0,H2,H4,...) with odd samples
-    // P_even: Odd-indexed coefficients (H1,H3,H5,...) with even samples
+    // Multiplexed Coefficient Selection
+    // Phase 0: Use odd-indexed coefficients (H1, H3, H5, ...)
+    // Phase 1: Use even-indexed coefficients (H0, H2, H4, ...)
     // -------------------------------------------------------------------------
-    wire signed [18:0] p_odd;
-    wire signed [18:0] p_even;
+    wire signed [7:0] coef0, coef1, coef2, coef3, coef4, coef5, coef6, coef7;
     
-    assign p_odd = H0  * x_odd[0] + H2  * x_odd[1] + H4  * x_odd[2] + H6  * x_odd[3] +
-                   H8  * x_odd[4] + H10 * x_odd[5] + H12 * x_odd[6] + H14 * x_odd[7];
-    
-    assign p_even = H1  * x_even[0] + H3  * x_even[1] + H5  * x_even[2] + H7  * x_even[3] +
-                    H9  * x_even[4] + H11 * x_even[5] + H13 * x_even[6] + H15 * x_even[7];
-    
-    // -------------------------------------------------------------------------
-    // ICG Instance - Clock gating for power efficiency
-    // Gated clock only toggles when new output is ready (half input rate)
-    // -------------------------------------------------------------------------
-    icg u_icg (
-        .clk(clk),
-        .en(phase),
-        .clk_out(clk_gated)
-    );
+    assign coef0 = phase ? H0  : H1;
+    assign coef1 = phase ? H2  : H3;
+    assign coef2 = phase ? H4  : H5;
+    assign coef3 = phase ? H6  : H7;
+    assign coef4 = phase ? H8  : H9;
+    assign coef5 = phase ? H10 : H11;
+    assign coef6 = phase ? H12 : H13;
+    assign coef7 = phase ? H14 : H15;
     
     // -------------------------------------------------------------------------
-    // Output Register - Clocked by gated clock for power savings
-    // Updates at half input rate (decimation by 2)
+    // Multiplexed Sample Selection
+    // Phase 0: Use even samples for P_even computation
+    // Phase 1: Use odd samples for P_odd computation
     // -------------------------------------------------------------------------
-    always @(posedge clk_gated or negedge rst_n) begin
+    wire signed [7:0] samp0, samp1, samp2, samp3, samp4, samp5, samp6, samp7;
+    
+    assign samp0 = phase ? x_odd[0] : x_even[0];
+    assign samp1 = phase ? x_odd[1] : x_even[1];
+    assign samp2 = phase ? x_odd[2] : x_even[2];
+    assign samp3 = phase ? x_odd[3] : x_even[3];
+    assign samp4 = phase ? x_odd[4] : x_even[4];
+    assign samp5 = phase ? x_odd[5] : x_even[5];
+    assign samp6 = phase ? x_odd[6] : x_even[6];
+    assign samp7 = phase ? x_odd[7] : x_even[7];
+    
+    // -------------------------------------------------------------------------
+    // 8 Shared Multipliers (Time-Domain Multiplexed)
+    // These compute P_even in phase 0 and P_odd in phase 1
+    // -------------------------------------------------------------------------
+    wire signed [15:0] prod0, prod1, prod2, prod3, prod4, prod5, prod6, prod7;
+    
+    assign prod0 = coef0 * samp0;
+    assign prod1 = coef1 * samp1;
+    assign prod2 = coef2 * samp2;
+    assign prod3 = coef3 * samp3;
+    assign prod4 = coef4 * samp4;
+    assign prod5 = coef5 * samp5;
+    assign prod6 = coef6 * samp6;
+    assign prod7 = coef7 * samp7;
+    
+    // -------------------------------------------------------------------------
+    // Partial Sum Computation (sum of 8 products)
+    // -------------------------------------------------------------------------
+    wire signed [18:0] partial_sum;
+    
+    assign partial_sum = prod0 + prod1 + prod2 + prod3 + 
+                         prod4 + prod5 + prod6 + prod7;
+    
+    // -------------------------------------------------------------------------
+    // P_even Register - Store partial sum from phase 0
+    // -------------------------------------------------------------------------
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            p_even_reg <= 19'sd0;
+        else if (!phase)
+            p_even_reg <= partial_sum;  // Capture P_even at end of phase 0
+    end
+    
+    // -------------------------------------------------------------------------
+    // Output Register - Compute final sum at end of phase 1
+    // y_out = P_even (registered) + P_odd (current partial_sum)
+    // -------------------------------------------------------------------------
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             y_out <= 20'sd0;
-        else
-            y_out <= p_odd + p_even;
+        else if (phase)
+            y_out <= p_even_reg + partial_sum;  // P_even + P_odd
     end
-
-endmodule
-
-
-// =============================================================================
-// ICG (Integrated Clock Gating) Cell
-// =============================================================================
-// Standard clock gating cell using negative-level-sensitive latch
-// followed by AND gate. This prevents clock glitches when enable changes.
-//
-// Operation:
-// - When clk is LOW: latch is transparent, en_latched follows en
-// - When clk is HIGH: latch holds previous en value
-// - clk_out = clk AND en_latched (glitch-free)
-// =============================================================================
-module icg (
-    input  wire clk,
-    input  wire en,
-    output wire clk_out
-);
-
-    // Latched enable signal
-    reg en_latched;
-    
-    // Negative-level-sensitive latch (transparent when clk is low)
-    // This ensures enable is stable before clock rising edge
-    always @(*) begin
-        if (!clk)
-            en_latched = en;
-    end
-    
-    // AND gate for clock gating
-    assign clk_out = clk & en_latched;
 
 endmodule
