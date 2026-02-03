@@ -1,8 +1,8 @@
-# Specification: 16-Tap FIR Filter with Decimation by 2 using Polyphase Decomposition
+# Specification: 16-Tap FIR Filter with Decimation by 2 using Time-Domain Multiplexing
 
 ## 1. Overview
 
-This document specifies the implementation of FIR filter with decimation by 2. The design uses **polyphase decomposition** to perform computation at output data rate, i.e. half the input clock frequency thereby relaxing the critical path for high speed design.
+This document specifies the implementation of an **area-efficient** FIR filter with decimation by 2. The design uses **time-domain multiplexing** to reuse multipliers across clock cycles, reducing the number of required multipliers from 16 to 8.
 
 ## 2. Mathematical Background
 
@@ -59,7 +59,18 @@ P_even(n) = h[1]*x_e[n] + h[3]*x_e[n-1] + h[5]*x_e[n-2] + h[7]*x_e[n-3] +
             h[9]*x_e[n-4] + h[11]*x_e[n-5] + h[13]*x_e[n-6] + h[15]*x_e[n-7]
 ```
 
-**Key Result**: Each partial sum uses only 8 coefficients and 8 samples. So total multipliers and adders are same as normal FIR filter, but since these odd and even parital sums only update at every other clock cycle, it can help in relaxing the critical path, thereby allowing the design to get synthesized at 2x the clock frequency.
+### 2.4 Time-Domain Multiplexing for Area Efficiency
+
+**Key Insight**: Since we have 2 clock cycles per output (due to decimation by 2), we can compute the two partial sums sequentially using the same set of 8 multipliers.
+
+**Architecture**:
+- **Clock cycle 0 (even input)**: Compute P_even using 8 multipliers with odd-indexed coefficients (H1, H3, H5, H7, H9, H11, H13, H15)
+- **Clock cycle 1 (odd input)**: Compute P_odd using the SAME 8 multipliers with even-indexed coefficients (H0, H2, H4, H6, H8, H10, H12, H14)
+- **Output**: Sum of P_even (registered) + P_odd
+
+**Area Savings**: This reduces multiplier count from 16 to 8, saving 50% multiplier area.
+
+**Trade-off**: The multipliers are active every clock cycle (no timing relaxation), but the area is significantly reduced.
 
 ## 3. Bitwidth Analysis
 
@@ -79,3 +90,11 @@ P_even(n) = h[1]*x_e[n] + h[3]*x_e[n-1] + h[5]*x_e[n-2] + h[7]*x_e[n-3] +
 
 ### 3.3 Output Width
 The final output `y_out` must be **20 bits signed** to accommodate the full dynamic range without overflow.
+
+## 4. Implementation Requirements
+
+1. **Multiplier Reuse**: Use exactly 8 multipliers, shared between P_odd and P_even computation
+2. **Coefficient Multiplexing**: Select between even-indexed (H0,H2,...,H14) and odd-indexed (H1,H3,...,H15) coefficients based on phase
+3. **Partial Sum Accumulation**: Store P_even result and add to P_odd to produce final output
+4. **Reset**: Active-low asynchronous reset
+5. **Output Timing**: New output valid after every odd input sample (decimation by 2)

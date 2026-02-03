@@ -25,17 +25,7 @@ module fir_filter_dec2 (
     parameter signed [7:0] H14 = 8'sd2;
     parameter signed [7:0] H15 = 8'sd4;
 
-    // TODO: Implement the polyphase FIR filter with decimation by 2
-
-endmodule
-
-
-module icg (
-    input  wire clk,
-    input  wire en,
-    output wire clk_out
-);
-
-    // TODO: Implement the ICG logic to prevent clock glitching when 'en' is switched
+    // TODO: Implement the area-efficient polyphase FIR filter with decimation by 2
+    // using time-domain multiplexing (8 shared multipliers instead of 16)
 
 endmodule
