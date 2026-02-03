@@ -1,15 +1,22 @@
 Code completion task:
 
-Complete the partial Verilog RTL code in sources/fir_filter_dec2.v which implements a high-speed 16-tap FIR filter with decimation by 2.
+Complete the partial Verilog RTL code in sources/fir_filter_dec2.v which implements an area-efficient 16-tap FIR filter with decimation by 2.
 
 The FIR filter computes:
     y[n] = Σ h[k] * x[n-k]  for k = 0 to 15
 
 With decimation by 2, only every other output is computed.
-The filter should use polyphase decomposition technique to relax the critical path based on the specification in docs/Specification.md.
+
+The filter should use **time-domain multiplexing** to achieve area efficiency:
+- Use polyphase decomposition to split computation into P_odd and P_even partial sums
+- Reuse the same 8 multipliers across two clock cycles (instead of using 16 multipliers)
+- On even input cycles: compute P_even using odd-indexed coefficients (H1, H3, ..., H15)
+- On odd input cycles: compute P_odd using even-indexed coefficients (H0, H2, ..., H14)
+- Accumulate and output the sum of both partial sums
+
+See docs/Specification.md for complete mathematical details.
+
 The RTL code should be synthesizable.
 The reset is active-low and asynchronous.
-
-For internally dividing the clock, use a clock divider followed by an ICG (Integrated Clock Gating) Cell for power savings.
 
 **Important**: This environment uses Icarus Verilog for testing. Avoid using SystemVerilog Assertion (SVA) property/sequence syntax if adding assertions.
