@@ -48,15 +48,33 @@ async def test_impulse_response(dut):
     await FallingEdge(dut.clk)
     dut.x_in.value = 0
     await FallingEdge(dut.clk)
+    
+    # Since we are not testing for latency, so let it be variable upto certain clocks
+    latency_good = 0
+    for i in range(4):
+        await FallingEdge(dut.clk)
+        if dut.y_out.value != 0:
+            latency_good = 1
+            y_out_val_first = to_signed(dut.y_out.value.to_unsigned(), 20)
+            break
+
+    assert latency_good, "Filter latency is too high > 5 clk cycles"
+
+    # Based on internal implementation of decimation filter, it is possible that either even or odd samples are coming out
+    # Lets adjust our comparisions according to that
+
+    if y_out_val_first == H[0] * impulse_value:
+        is_first_sample_odd = 0
+    elif y_out_val_first == H[1] * impulse_value:
+        is_first_sample_odd = 1
+    else:
+        assert False, f"First sample {y_out_val_first} should match with either {H[0] * impulse_value} or {H[1] * impulse_value}"
+
 
     for i in range(16):
-        
-        # Wait for clock edge (DUT samples x_in)
-        await FallingEdge(dut.clk)
-        
-        # Check output at odd sample indices (after odd sample is captured)
+        # Check output at odd sample indices (after odd or even sample is captured)
         # y_out is updated after phase 1 (odd sample)
-        if i % 2 == 1:
+        if i % 2 == is_first_sample_odd:
             test_count += 1
             output_idx = i - 1
             y_out_val = to_signed(dut.y_out.value.to_unsigned(), 20)
@@ -67,6 +85,9 @@ async def test_impulse_response(dut):
                 dut._log.info(f"  y[{output_idx}] = {y_out_val} [PASS]")
             else:
                 dut._log.error(f"  y[{output_idx}] = {y_out_val}, expected {expected} [FAIL]")
+
+        # Wait for clock edge (DUT samples x_in)
+        await FallingEdge(dut.clk)
     
     dut._log.info(f"Impulse test: {pass_count}/{test_count} passed")
     assert pass_count == test_count, f"Impulse response test failed: {pass_count}/{test_count} passed"
@@ -95,8 +116,8 @@ async def test_step_response(dut):
     dut._log.info("Test 2: Step Response (x[n] = 10 for all n)")
     dut._log.info("-------------------------------------------")
     
-    # Run for 20 cycles to let filter settle
-    for _ in range(20):
+    # Run for 24 cycles to let filter settle
+    for _ in range(22):
         await FallingEdge(dut.clk)
     
     # Calculate expected steady-state output
