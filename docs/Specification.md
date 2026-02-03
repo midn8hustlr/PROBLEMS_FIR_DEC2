@@ -90,11 +90,3 @@ P_even(n) = h[1]*x_e[n] + h[3]*x_e[n-1] + h[5]*x_e[n-2] + h[7]*x_e[n-3] +
 
 ### 3.3 Output Width
 The final output `y_out` must be **20 bits signed** to accommodate the full dynamic range without overflow.
-
-## 4. Implementation Requirements
-
-1. **Multiplier Reuse**: Use exactly 8 multipliers, shared between P_odd and P_even computation
-2. **Coefficient Multiplexing**: Select between even-indexed (H0,H2,...,H14) and odd-indexed (H1,H3,...,H15) coefficients based on phase
-3. **Partial Sum Accumulation**: Store P_even result and add to P_odd to produce final output
-4. **Reset**: Active-low asynchronous reset
-5. **Output Timing**: New output valid after every odd input sample (decimation by 2)
