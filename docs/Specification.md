@@ -1,4 +1,4 @@
-# Background: Symmetric FIR Filters with Decimation
+# Specification: Symmetric FIR Filter with Decimation by 2
 
 ## 1. FIR Filter Basics
 
@@ -33,9 +33,9 @@ y[n] = h[0]*(x[n] + x[n-15]) + h[1]*(x[n-1] + x[n-14]) + ... + h[7]*(x[n-7] + x[
 
 By **pre-adding symmetric sample pairs**, we reduce the number of multiplications by half.
 
-## 3. Decimation
+## 3. Decimation by 2
 
-Decimation reduces the output sample rate. With decimation by 2, only every other output sample is computed:
+With decimation by 2, only every other output sample is computed. Computing y[2n+1]:
 
 ```
 y[2n+1] = Σ h[k] * x[2n+1-k]  for k = 0 to 15
@@ -51,18 +51,47 @@ Polyphase decomposition splits the input into separate streams based on sample i
 
 Each stream is stored in its own shift register, updated on alternate clock cycles.
 
-## 5. Time-Domain Multiplexing (TDM)
+## 5. Combining Symmetry with Polyphase Decomposition
 
-When decimation provides multiple clock cycles per output, multipliers can be shared across cycles:
-- Cycle 1: Compute partial products with first set of coefficients
-- Cycle 2: Compute partial products with second set of coefficients
-- Accumulate results across cycles
+For output y[2n+1], the sample indices x[2n+1-k] for k=0..15 map to polyphase streams as:
 
-This trades computation time for reduced hardware area.
+| k | Sample | Polyphase |
+|---|--------|-----------|
+| 0 | x[2n+1] | x_o[n] |
+| 1 | x[2n] | x_e[n] |
+| 2 | x[2n-1] | x_o[n-1] |
+| 3 | x[2n-2] | x_e[n-1] |
+| ... | ... | ... |
+| 14 | x[2n-13] | x_o[n-7] |
+| 15 | x[2n-14] | x_e[n-7] |
 
-## 6. Bitwidth Considerations
+The 8 symmetric pre-additions combine samples at positions k and (15-k):
 
-For signed arithmetic:
-- Pre-addition of two N-bit values requires N+1 bits
-- Multiplication of A-bit and B-bit values produces (A+B)-bit result
-- Summing M products requires log2(M) additional bits for the accumulator
+| Coefficient | Samples Added |
+|-------------|---------------|
+| h[0] | x[2n+1] + x[2n-14] = x_o[n] + x_e[n-7] |
+| h[1] | x[2n] + x[2n-13] = x_e[n] + x_o[n-7] |
+| h[2] | x[2n-1] + x[2n-12] = x_o[n-1] + x_e[n-6] |
+| h[3] | x[2n-2] + x[2n-11] = x_e[n-1] + x_o[n-6] |
+| h[4] | x[2n-3] + x[2n-10] = x_o[n-2] + x_e[n-5] |
+| h[5] | x[2n-4] + x[2n-9] = x_e[n-2] + x_o[n-5] |
+| h[6] | x[2n-5] + x[2n-8] = x_o[n-3] + x_e[n-4] |
+| h[7] | x[2n-6] + x[2n-7] = x_e[n-3] + x_o[n-4] |
+
+## 6. Time-Domain Multiplexing (TDM)
+
+With 2 clock cycles per output (due to decimation), 4 multipliers can compute all 8 products:
+- **Phase 0**: Compute 4 products (e.g., using h[0], h[2], h[4], h[6])
+- **Phase 1**: Compute 4 products (e.g., using h[1], h[3], h[5], h[7])
+- Accumulate partial sums across phases
+
+## 7. Bitwidth Requirements
+
+| Signal | Width |
+|--------|-------|
+| Input samples | 8-bit signed |
+| Coefficients | 8-bit signed |
+| Pre-addition sum | 9-bit signed |
+| Single product | 17-bit signed |
+| Sum of 4 products | 19-bit signed |
+| Final output | 20-bit signed |
