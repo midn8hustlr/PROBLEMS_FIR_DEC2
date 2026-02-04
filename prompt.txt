@@ -1,18 +1,17 @@
 Code completion task:
 
-Complete the partial Verilog RTL code in sources/fir_filter_dec2.v which implements an area-efficient 16-tap FIR filter with decimation by 2.
+Complete the partial Verilog RTL code in sources/fir_filter_dec2.v which implements an area-optimized 16-tap symmetric FIR filter with decimation by 2.
 
 The FIR filter computes:
     y[n] = Σ h[k] * x[n-k]  for k = 0 to 15
 
-With decimation by 2, only every other output is computed.
+The filter has **symmetric coefficients** (h[k] = h[15-k]), meaning only 8 unique coefficient values.
 
-The filter should use **time-domain multiplexing** to achieve area efficiency:
-- Use polyphase decomposition to split computation into P_odd and P_even partial sums
-- Reuse the same 8 multipliers across two clock cycles (instead of using 16 multipliers)
-- On even input cycles: compute P_even using odd-indexed coefficients (H1, H3, ..., H15)
-- On odd input cycles: compute P_odd using even-indexed coefficients (H0, H2, ..., H14)
-- Accumulate and output the sum of both partial sums
+Design requirements:
+- Exploit coefficient symmetry by **pre-adding symmetric sample pairs** before multiplication
+- Use **polyphase decomposition** to handle decimation by 2
+- Use **time-domain multiplexing** with only **4 multipliers** (not 8 or 16)
+- Compute 4 products per clock cycle, accumulate over 2 cycles to produce each output
 
 See docs/Specification.md for complete mathematical details.
 

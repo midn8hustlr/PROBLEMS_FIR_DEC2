@@ -1,14 +1,21 @@
-# FIR Filter with Decimation by 2 (Area-Efficient)
+# Symmetric FIR Filter with Decimation by 2 (Area-Optimized)
 
-Area-efficient 16-tap FIR filter with decimation by 2 using time-domain multiplexing.
+Area-optimized 16-tap symmetric FIR filter with decimation by 2, using only 4 multipliers.
 
 ## Problem Description
 
-Implement an area-efficient 16-tap FIR filter that:
-- Uses polyphase decomposition to split computation into P_odd and P_even
-- Uses time-domain multiplexing to reuse 8 multipliers (instead of 16)
-- Computes P_even on even clock cycles, P_odd on odd clock cycles
-- Achieves 50% multiplier area savings
+Implement an area-optimized symmetric FIR filter that:
+- Exploits **coefficient symmetry** (h[k] = h[15-k]) to pre-add sample pairs
+- Uses **polyphase decomposition** for decimation by 2
+- Uses **time-domain multiplexing** to share 4 multipliers across 2 phases
+- Achieves 75% multiplier reduction (4 instead of 16)
+
+## Key Challenges
+
+1. Correct mapping of symmetric sample pairs across odd/even polyphase registers
+2. Proper timing for pre-sum computation (using x_in for newest sample)
+3. TDM scheduling of coefficients and samples
+4. Accumulation across two computation phases
 
 ## Directory Structure
 
