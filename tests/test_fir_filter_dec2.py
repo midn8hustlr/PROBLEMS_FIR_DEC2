@@ -4,7 +4,7 @@ from cocotb.triggers import RisingEdge, FallingEdge, Timer
 
 
 # Filter coefficients (same as DUT)
-H = [2, 4, 6, 10, 14, 20, 26, 32, 26, 32, 14, 20, 6, 10, 2, 4]
+H = [2, 4, 6, 10, 14, 20, 26, 32, 32, 26, 20, 14, 10, 6, 4, 2]
 
 
 def to_signed(val, bits=20):
