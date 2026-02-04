@@ -13,7 +13,9 @@ Design requirements:
 - Use **time-domain multiplexing** with only **4 multipliers** (not 8 or 16)
 - Compute 4 products per clock cycle, accumulate over 2 cycles to produce each output
 
-See docs/Specification.md for complete mathematical details.
+Reference materials:
+- docs/Specification.md - Background concepts on symmetric FIR and polyphase decomposition
+- hints.txt - Implementation hints with register mappings and timing details
 
 The RTL code should be synthesizable.
 The reset is active-low and asynchronous.
