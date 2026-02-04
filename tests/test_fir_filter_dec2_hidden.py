@@ -153,10 +153,14 @@ def test_fir_filter_dec2_runner():
         sources=sources,
         hdl_toplevel="fir_filter_dec2",
         always=True,
-        waves=True
+        #waves=True
     )
     
-    runner.test(hdl_toplevel="fir_filter_dec2", test_module="test_fir_filter_dec2", waves=True)
+    runner.test(
+        hdl_toplevel="fir_filter_dec2",
+        test_module="test_fir_filter_dec2_hidden",
+        #waves=True
+    )
 
 
 if __name__ == "__main__":
