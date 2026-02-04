@@ -1,67 +1,12 @@
-Implementation Hints for Symmetric FIR Filter with Decimation by 2
+Implementation Hints
 
-================================================================================
-HINT 1: Polyphase Shift Register Structure
-================================================================================
-Use two separate 8-deep shift registers:
-- x_even[0:7] for even-indexed input samples (updated during phase 0)
-- x_odd[0:7] for odd-indexed input samples (updated during phase 1)
+1. Use two separate shift registers for polyphase decomposition (one for odd samples, 
+   one for even samples). Each needs 8 entries.
 
-Use a phase counter that alternates between 0 and 1 each clock cycle.
+2. The symmetric pre-sums should be computed and registered at the right time in the 
+   pipeline so they're stable during the two-phase multiplication window.
 
-================================================================================
-HINT 2: Sample Indexing at End of Phase 1
-================================================================================
-When computing output y[2n+1], samples are available as:
-- x_in = x_o[n] (current odd input, not yet in shift register)
-- x_odd[k] = x_o[n-1-k] for k=0..7 (previous odd samples)
-- x_even[k] = x_e[n-k] for k=0..7 (even samples)
+3. For the newest odd sample, consider whether it's already in the shift register or 
+   still on the input when you need to use it.
 
-IMPORTANT: Use x_in directly for the newest odd sample since it hasn't been
-shifted into x_odd[0] yet at the clock edge.
-
-================================================================================
-HINT 3: Symmetric Pre-Addition Mapping
-================================================================================
-The 8 symmetric sample pairs for y[2n+1] map to registers as:
-
-  Coefficient | Sample Sum              | Register Mapping
-  ------------|-------------------------|---------------------------
-  H0          | x_o[n] + x_e[n-7]       | x_in + x_even[7]
-  H1          | x_e[n] + x_o[n-7]       | x_even[0] + x_odd[6]
-  H2          | x_o[n-1] + x_e[n-6]     | x_odd[0] + x_even[6]
-  H3          | x_e[n-1] + x_o[n-6]     | x_even[1] + x_odd[5]
-  H4          | x_o[n-2] + x_e[n-5]     | x_odd[1] + x_even[5]
-  H5          | x_e[n-2] + x_o[n-5]     | x_even[2] + x_odd[4]
-  H6          | x_o[n-3] + x_e[n-4]     | x_odd[2] + x_even[4]
-  H7          | x_e[n-3] + x_o[n-4]     | x_even[3] + x_odd[3]
-
-================================================================================
-HINT 4: Time-Domain Multiplexing with 4 Multipliers
-================================================================================
-Split the 8 multiplications across 2 phases:
-- Phase 0: Use coefficients H0, H2, H4, H6 with sym_sum[0,2,4,6]
-- Phase 1: Use coefficients H1, H3, H5, H7 with sym_sum[1,3,5,7]
-
-Use muxes to select coefficients and pre-sums based on current phase.
-
-================================================================================
-HINT 5: Computation Timing
-================================================================================
-Recommended sequence:
-1. End of phase 1: Capture all 8 symmetric pre-sums into registers (sym_sum)
-2. During phase 0: Compute 4 products, store partial sum
-3. During phase 1: Compute 4 products, add to partial sum, output result
-
-The sym_sum registers should be updated at the end of phase 1, and they remain
-stable during the subsequent phase 0 and phase 1 computation window.
-
-================================================================================
-HINT 6: Bitwidths
-================================================================================
-- Input samples: 8-bit signed
-- Coefficients: 8-bit signed  
-- Pre-addition result: 9-bit signed (8+8 with carry)
-- Single product: 17-bit signed (8-bit * 9-bit)
-- Sum of 4 products: 19-bit signed
-- Final output: 20-bit signed (sum of 8 products)
+4. Bitwidths: pre-sum is 9-bit, product is 17-bit, final output is 20-bit.
