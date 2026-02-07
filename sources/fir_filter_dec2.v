@@ -4,7 +4,7 @@ module fir_filter_dec2 (
     input  wire                 clk,
     input  wire                 rst_n,
     input  wire signed [7:0]    x_in,
-    output reg  signed [22:0]   y_out
+    output wire signed [22:0]   y_out
 );
 
     // =========================================================================
@@ -21,6 +21,27 @@ module fir_filter_dec2 (
     parameter signed [7:0] H42=8'sd43, H43=8'sd44, H44=8'sd45, H45=8'sd46, H46=8'sd47, H47=8'sd48;
     parameter signed [7:0] H48=8'sd49, H49=8'sd50, H50=8'sd51, H51=8'sd52, H52=8'sd53, H53=8'sd54;
     parameter signed [7:0] H54=8'sd55, H55=8'sd56, H56=8'sd57, H57=8'sd58, H58=8'sd59, H59=8'sd60;
+    
+    // Additional parameters to add input and output latency to check if tests
+    // passes for flexibilty for latency in RTL implementation
+    parameter integer INPUT_LATENCY = 0;
+    parameter integer OUTPUT_LATENCY = 0;
+
+    reg [7:0] x_in_r, x_in_r2;
+    wire [7:0] x_in_mx;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            x_in_r <= 8'sd0;
+            x_in_r2 <= 8'sd0;
+        end else begin
+            x_in_r <= x_in;
+            x_in_r2 <= x_in_r;
+        end
+    end
+
+    assign x_in_mx = (INPUT_LATENCY == 1) ? x_in_r :
+                     (INPUT_LATENCY == 2) ? x_in_r2 : x_in;
 
     // Pack coefficients for indexed access: COEFF[k*8 +: 8] = H_k
     localparam [479:0] COEFF = {
@@ -66,15 +87,15 @@ module fir_filter_dec2 (
             case (phase)
                 2'd0: begin
                     for (i = 39; i > 0; i = i - 1) sr0[i] <= sr0[i-1];
-                    sr0[0] <= x_in;
+                    sr0[0] <= x_in_mx;
                 end
                 2'd1: begin
                     for (i = 39; i > 0; i = i - 1) sr1[i] <= sr1[i-1];
-                    sr1[0] <= x_in;
+                    sr1[0] <= x_in_mx;
                 end
                 2'd2: begin
                     for (i = 39; i > 0; i = i - 1) sr2[i] <= sr2[i-1];
-                    sr2[0] <= x_in;
+                    sr2[0] <= x_in_mx;
                 end
                 default: ;
             endcase
@@ -99,7 +120,7 @@ module fir_filter_dec2 (
         for (g = 0; g < 120; g = g + 1) begin : tap_map
             if (g % 3 == 0) begin : sub2
                 if (g == 0) begin : newest
-                    assign tap_sample[g] = x_in;
+                    assign tap_sample[g] = x_in_mx;
                 end else begin : delayed
                     assign tap_sample[g] = sr2[g/3 - 1];
                 end
@@ -184,19 +205,35 @@ module fir_filter_dec2 (
     //   Phase 2: Output total (60 products), also captures new sym_sum
     // =========================================================================
     reg signed [22:0] accum;
+    reg signed [22:3] y_out_int;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             accum <= 23'sd0;
-            y_out <= 23'sd0;
+            y_out_int <= 23'sd0;
         end else begin
             case (phase)
                 2'd0: accum <= phase_sum;
                 2'd1: accum <= accum + phase_sum;
-                2'd2: y_out <= accum + phase_sum;
+                2'd2: y_out_int <= accum + phase_sum;
                 default: ;
             endcase
         end
     end
+
+    reg signed [22:0] y_out_r, y_out_r2;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            y_out_r <= 23'sd0;
+            y_out_r2 <= 23'sd0;
+        end else begin
+            y_out_r <= y_out_int;
+            y_out_r2 <= y_out_r;
+        end
+    end
+
+    assign y_out = (OUTPUT_LATENCY == 1) ? y_out_r :
+                   (OUTPUT_LATENCY == 2) ? y_out_r2 : y_out_int;
 
 endmodule
