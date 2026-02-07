@@ -52,11 +52,12 @@ async def test_impulse_response(dut):
     # Since we are not testing for latency, so let it be variable upto certain clocks
     latency_good = 0
     for i in range(4):
-        await FallingEdge(dut.clk)
         if dut.y_out.value != 0:
             latency_good = 1
             y_out_val_first = to_signed(dut.y_out.value.to_unsigned(), 20)
+            dut._log.info(f"First sample is {y_out_val_first}")
             break
+        await FallingEdge(dut.clk)
 
     assert latency_good, "Filter latency is too high > 5 clk cycles"
 
@@ -153,13 +154,13 @@ def test_fir_filter_dec2_runner():
         sources=sources,
         hdl_toplevel="fir_filter_dec2",
         always=True,
-        #waves=True
+        waves=True
     )
     
     runner.test(
         hdl_toplevel="fir_filter_dec2",
         test_module="test_fir_filter_dec2_hidden",
-        #waves=True
+        waves=True
     )
 
 
