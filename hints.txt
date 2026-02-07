@@ -1,7 +1,0 @@
-Implementation Hints
-
-1. Use two 8-entry shift registers: one for odd samples, one for even samples.
-
-2. Use a phase counter to alternate between capturing odd and even samples.
-
-3. Calculate the output bitwidth from the datapath to prevent overflow.

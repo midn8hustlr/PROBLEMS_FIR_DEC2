@@ -15,7 +15,6 @@ Design requirements:
 
 Reference materials:
 - docs/Specification.md - Background concepts on symmetric FIR and polyphase decomposition
-- hints.txt - Implementation hints with register mappings and timing details
 
 The RTL code should be synthesizable.
 The reset is active-low and asynchronous.
