@@ -14,12 +14,11 @@ def to_signed(val, bits=23):
     return val
 
 
-@cocotb.test()
-async def test_impulse_response(dut):
-    """Test 1: Impulse Response - impulse at x[0].
+async def _run_impulse_test(dut, impulse_value, label):
+    """Shared impulse response test logic.
 
-    Verifies that the decimated FIR output matches h[k] * impulse_value
-    at the appropriate tap indices.
+    Applies a single impulse of `impulse_value` at x[0] and verifies
+    that every decimated output matches h[k] * impulse_value.
     """
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
 
@@ -31,10 +30,8 @@ async def test_impulse_response(dut):
 
     dut.rst_n.value = 1
 
-    dut._log.info("Test 1: Impulse Response")
-    dut._log.info("------------------------")
-
-    impulse_value = 50
+    dut._log.info(f"{label}: Impulse Response (impulse = {impulse_value})")
+    dut._log.info("-" * 50)
 
     # Apply impulse at x[0]
     dut.x_in.value = impulse_value
@@ -88,15 +85,33 @@ async def test_impulse_response(dut):
 
 
 @cocotb.test()
-async def test_step_response(dut):
-    """Test 2: Step Response - x[n] = 10 for all n.
+async def test_impulse_response_unit(dut):
+    """Test 1a: Unit Impulse Response - impulse of 1 at x[0].
 
-    Verifies that the FIR filter settles to the correct steady-state value
-    when a constant input is applied. Expected output = sum(H) * step_value.
+    Verifies the raw coefficient values at every decimated output tap.
+    Useful for debugging since expected values equal the coefficients directly.
+    """
+    await _run_impulse_test(dut, impulse_value=1, label="Test 1a")
+
+
+@cocotb.test()
+async def test_impulse_response_scaled(dut):
+    """Test 1b: Scaled Impulse Response - impulse of 50 at x[0].
+
+    Verifies the filter output for a larger impulse, checking that
+    h[k] * 50 appears correctly at each decimated output tap.
+    """
+    await _run_impulse_test(dut, impulse_value=50, label="Test 1b")
+
+
+async def _run_step_test(dut, step_value, label):
+    """Shared step response test logic.
+
+    Applies a constant input of `step_value` and verifies that the filter
+    settles to sum(H) * step_value.
     """
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
 
-    step_value = 10
     dut.x_in.value = step_value
 
     dut.rst_n.value = 0
@@ -104,8 +119,8 @@ async def test_step_response(dut):
         await FallingEdge(dut.clk)
     dut.rst_n.value = 1
 
-    dut._log.info("Test 2: Step Response (x[n] = 10 for all n)")
-    dut._log.info("--------------------------------------------")
+    dut._log.info(f"{label}: Step Response (x[n] = {step_value} for all n)")
+    dut._log.info("-" * 50)
 
     # Wait for filter to settle (120 taps + pipeline latency)
     for _ in range(140):
@@ -122,6 +137,26 @@ async def test_step_response(dut):
         dut._log.error(f"  Step response [FAIL]: got {y_val}, expected {expected}")
 
     assert y_val == expected, f"Step response test failed: got {y_val}, expected {expected}"
+
+
+@cocotb.test()
+async def test_step_response_unit(dut):
+    """Test 2a: Unit Step Response - x[n] = 1 for all n.
+
+    Verifies steady-state output equals sum(H). Useful for debugging
+    since the expected value is just the sum of all coefficients.
+    """
+    await _run_step_test(dut, step_value=1, label="Test 2a")
+
+
+@cocotb.test()
+async def test_step_response_scaled(dut):
+    """Test 2b: Scaled Step Response - x[n] = 10 for all n.
+
+    Verifies steady-state output equals sum(H) * 10, exercising larger
+    arithmetic values to catch overflow/truncation issues.
+    """
+    await _run_step_test(dut, step_value=10, label="Test 2b")
 
 
 def test_fir_filter_dec2_runner():
