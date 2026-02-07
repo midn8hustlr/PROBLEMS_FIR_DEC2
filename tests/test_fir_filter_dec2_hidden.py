@@ -104,6 +104,16 @@ async def test_impulse_response_scaled(dut):
     await _run_impulse_test(dut, impulse_value=127, label="Test 1b")
 
 
+@cocotb.test()
+async def test_impulse_response_negative(dut):
+    """Test 1c: Negative Impulse Response - impulse of -127 at x[0].
+
+    Verifies the filter output for a full-scale negative impulse, checking
+    that h[k] * (-127) appears correctly at each decimated output tap.
+    """
+    await _run_impulse_test(dut, impulse_value=-127, label="Test 1c")
+
+
 async def _run_step_test(dut, step_value, label):
     """Shared step response test logic.
 
@@ -157,6 +167,16 @@ async def test_step_response_scaled(dut):
     full-scale input to catch overflow/truncation issues.
     """
     await _run_step_test(dut, step_value=127, label="Test 2b")
+
+
+@cocotb.test()
+async def test_step_response_negative(dut):
+    """Test 2c: Negative Step Response - x[n] = -127 for all n.
+
+    Verifies steady-state output equals sum(H) * (-127), exercising
+    full-scale negative input to catch signed arithmetic issues.
+    """
+    await _run_step_test(dut, step_value=-127, label="Test 2c")
 
 
 def test_fir_filter_dec2_runner():
