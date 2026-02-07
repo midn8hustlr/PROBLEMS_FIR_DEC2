@@ -4,7 +4,7 @@ module fir_filter_dec2 (
     input  wire                 clk,
     input  wire                 rst_n,
     input  wire signed [7:0]    x_in,
-    output reg  signed [19:0]   y_out
+    output reg  signed [7:0]    y_out   // TODO: determine correct output width
 );
 
     // Symmetric Filter Coefficients: H[k] = H[15-k]
