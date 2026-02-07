@@ -96,12 +96,12 @@ async def test_impulse_response_unit(dut):
 
 @cocotb.test()
 async def test_impulse_response_scaled(dut):
-    """Test 1b: Scaled Impulse Response - impulse of 50 at x[0].
+    """Test 1b: Scaled Impulse Response - impulse of 127 at x[0].
 
-    Verifies the filter output for a larger impulse, checking that
-    h[k] * 50 appears correctly at each decimated output tap.
+    Verifies the filter output for a full-scale impulse, checking that
+    h[k] * 127 appears correctly at each decimated output tap.
     """
-    await _run_impulse_test(dut, impulse_value=50, label="Test 1b")
+    await _run_impulse_test(dut, impulse_value=127, label="Test 1b")
 
 
 async def _run_step_test(dut, step_value, label):
@@ -151,12 +151,12 @@ async def test_step_response_unit(dut):
 
 @cocotb.test()
 async def test_step_response_scaled(dut):
-    """Test 2b: Scaled Step Response - x[n] = 10 for all n.
+    """Test 2b: Scaled Step Response - x[n] = 127 for all n.
 
-    Verifies steady-state output equals sum(H) * 10, exercising larger
-    arithmetic values to catch overflow/truncation issues.
+    Verifies steady-state output equals sum(H) * 127, exercising
+    full-scale input to catch overflow/truncation issues.
     """
-    await _run_step_test(dut, step_value=10, label="Test 2b")
+    await _run_step_test(dut, step_value=127, label="Test 2b")
 
 
 def test_fir_filter_dec2_runner():
