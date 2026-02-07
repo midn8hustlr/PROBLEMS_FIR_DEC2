@@ -4,175 +4,198 @@ module fir_filter_dec2 (
     input  wire                 clk,
     input  wire                 rst_n,
     input  wire signed [7:0]    x_in,
-    output reg  signed [19:0]   y_out
+    output reg  signed [22:0]   y_out
 );
 
     // =========================================================================
-    // Symmetric Filter Coefficients
-    // H[k] = H[15-k], so only 8 unique values needed
+    // 60 Symmetric Coefficients: H[k] = H[119-k]
+    // Full 120-tap filter: [1,2,...,60, 60,59,...,2,1]
     // =========================================================================
-    parameter signed [7:0] H0 = 8'sd2;   // H0 = H15
-    parameter signed [7:0] H1 = 8'sd4;   // H1 = H14
-    parameter signed [7:0] H2 = 8'sd6;   // H2 = H13
-    parameter signed [7:0] H3 = 8'sd10;  // H3 = H12
-    parameter signed [7:0] H4 = 8'sd14;  // H4 = H11
-    parameter signed [7:0] H5 = 8'sd20;  // H5 = H10
-    parameter signed [7:0] H6 = 8'sd26;  // H6 = H9
-    parameter signed [7:0] H7 = 8'sd32;  // H7 = H8
+    parameter signed [7:0] H0 =8'sd1,  H1 =8'sd2,  H2 =8'sd3,  H3 =8'sd4,  H4 =8'sd5,  H5 =8'sd6;
+    parameter signed [7:0] H6 =8'sd7,  H7 =8'sd8,  H8 =8'sd9,  H9 =8'sd10, H10=8'sd11, H11=8'sd12;
+    parameter signed [7:0] H12=8'sd13, H13=8'sd14, H14=8'sd15, H15=8'sd16, H16=8'sd17, H17=8'sd18;
+    parameter signed [7:0] H18=8'sd19, H19=8'sd20, H20=8'sd21, H21=8'sd22, H22=8'sd23, H23=8'sd24;
+    parameter signed [7:0] H24=8'sd25, H25=8'sd26, H26=8'sd27, H27=8'sd28, H28=8'sd29, H29=8'sd30;
+    parameter signed [7:0] H30=8'sd31, H31=8'sd32, H32=8'sd33, H33=8'sd34, H34=8'sd35, H35=8'sd36;
+    parameter signed [7:0] H36=8'sd37, H37=8'sd38, H38=8'sd39, H39=8'sd40, H40=8'sd41, H41=8'sd42;
+    parameter signed [7:0] H42=8'sd43, H43=8'sd44, H44=8'sd45, H45=8'sd46, H46=8'sd47, H47=8'sd48;
+    parameter signed [7:0] H48=8'sd49, H49=8'sd50, H50=8'sd51, H51=8'sd52, H52=8'sd53, H53=8'sd54;
+    parameter signed [7:0] H54=8'sd55, H55=8'sd56, H56=8'sd57, H57=8'sd58, H58=8'sd59, H59=8'sd60;
+
+    // Pack coefficients for indexed access: COEFF[k*8 +: 8] = H_k
+    localparam [479:0] COEFF = {
+        H59, H58, H57, H56, H55, H54, H53, H52, H51, H50,
+        H49, H48, H47, H46, H45, H44, H43, H42, H41, H40,
+        H39, H38, H37, H36, H35, H34, H33, H32, H31, H30,
+        H29, H28, H27, H26, H25, H24, H23, H22, H21, H20,
+        H19, H18, H17, H16, H15, H14, H13, H12, H11, H10,
+        H9,  H8,  H7,  H6,  H5,  H4,  H3,  H2,  H1,  H0
+    };
 
     // =========================================================================
-    // Area-Optimized Symmetric FIR Filter with Decimation by 2
+    // Phase Counter (0 → 1 → 2 → 0 → ...)
     // =========================================================================
-    //
-    // Architecture:
-    // 1. Polyphase decomposition: separate shift registers for odd/even samples
-    // 2. Symmetric pre-addition: add sample pairs before multiplication
-    // 3. Time-domain multiplexing: 4 multipliers compute 8 products over 2 phases
-    //
-    // For y[2n+1]:
-    //   Phase 0: Compute h[0]*(x_o[n]+x_e[n-7]) + h[2]*(...) + h[4]*(...) + h[6]*(...)
-    //   Phase 1: Compute h[1]*(x_e[n]+x_o[n-7]) + h[3]*(...) + h[5]*(...) + h[7]*(...)
-    //   Output:  Sum of both phases
-    // =========================================================================
+    reg [1:0] phase;
 
-    // Phase counter: 0 = even sample input, 1 = odd sample input
-    reg phase;
-
-    // Polyphase shift registers (8 taps each)
-    reg signed [7:0] x_odd  [0:7];  // Odd input samples: x_o[n-1], x_o[n-2], ...
-    reg signed [7:0] x_even [0:7];  // Even input samples: x_e[n], x_e[n-1], ...
-
-    // Registered symmetric pre-sums (captured at end of phase 1)
-    reg signed [8:0] sym_sum [0:7];
-
-    // Partial sum accumulator
-    reg signed [18:0] partial_sum;
-
-    // -------------------------------------------------------------------------
-    // Phase Counter
-    // -------------------------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)
-            phase <= 1'b0;
+            phase <= 2'd0;
         else
-            phase <= ~phase;
+            phase <= (phase == 2'd2) ? 2'd0 : phase + 2'd1;
     end
 
-    // -------------------------------------------------------------------------
-    // Polyphase Sample Capture
-    // Even samples captured during phase 0, odd samples during phase 1
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Three Polyphase Shift Registers (40 entries each)
+    //   sr0: sub-sequence 0 → x[0], x[3], x[6], ...
+    //   sr1: sub-sequence 1 → x[1], x[4], x[7], ...
+    //   sr2: sub-sequence 2 → x[2], x[5], x[8], ...
+    // =========================================================================
+    reg signed [7:0] sr0 [0:39];
+    reg signed [7:0] sr1 [0:39];
+    reg signed [7:0] sr2 [0:39];
+
     integer i;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < 8; i = i + 1) begin
-                x_odd[i]  <= 8'sd0;
-                x_even[i] <= 8'sd0;
+            for (i = 0; i < 40; i = i + 1) begin
+                sr0[i] <= 8'sd0;
+                sr1[i] <= 8'sd0;
+                sr2[i] <= 8'sd0;
             end
         end else begin
-            if (!phase) begin
-                // Phase 0: Capture even sample
-                for (i = 7; i > 0; i = i - 1)
-                    x_even[i] <= x_even[i-1];
-                x_even[0] <= x_in;
-            end else begin
-                // Phase 1: Capture odd sample
-                for (i = 7; i > 0; i = i - 1)
-                    x_odd[i] <= x_odd[i-1];
-                x_odd[0] <= x_in;
-            end
+            case (phase)
+                2'd0: begin
+                    for (i = 39; i > 0; i = i - 1) sr0[i] <= sr0[i-1];
+                    sr0[0] <= x_in;
+                end
+                2'd1: begin
+                    for (i = 39; i > 0; i = i - 1) sr1[i] <= sr1[i-1];
+                    sr1[0] <= x_in;
+                end
+                2'd2: begin
+                    for (i = 39; i > 0; i = i - 1) sr2[i] <= sr2[i-1];
+                    sr2[0] <= x_in;
+                end
+                default: ;
+            endcase
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Symmetric Pre-Sum Computation
-    // Captured at end of phase 1 when all samples for y[2n+1] are available
+    // =========================================================================
+    // Tap-to-Sample Mapping (combinational)
     //
-    // At end of phase 1 (before clock edge):
-    //   x_in = x_o[n] (current odd input, not yet in shift register)
-    //   x_odd[k] = x_o[n-1-k] for k=0..7
-    //   x_even[k] = x_e[n-k] for k=0..7
+    // For output y[3n+2], tap k uses sample x[3n+2-k]:
+    //   k%3==0 → sub-seq 2, delay k/3 (use x_in when delay=0)
+    //   k%3==1 → sub-seq 1, delay k/3
+    //   k%3==2 → sub-seq 0, delay k/3
     //
-    // Symmetric pairs for y[2n+1]:
-    //   sym_sum[0] = x_o[n] + x_e[n-7]     → coefficient H0
-    //   sym_sum[1] = x_e[n] + x_o[n-7]     → coefficient H1
-    //   sym_sum[2] = x_o[n-1] + x_e[n-6]   → coefficient H2
-    //   sym_sum[3] = x_e[n-1] + x_o[n-6]   → coefficient H3
-    //   sym_sum[4] = x_o[n-2] + x_e[n-5]   → coefficient H4
-    //   sym_sum[5] = x_e[n-2] + x_o[n-5]   → coefficient H5
-    //   sym_sum[6] = x_o[n-3] + x_e[n-4]   → coefficient H6
-    //   sym_sum[7] = x_e[n-3] + x_o[n-4]   → coefficient H7
-    // -------------------------------------------------------------------------
+    // At end of phase 2: sr0/sr1 are up-to-date, sr2 is about to be
+    // updated (so x_in provides the newest sr2 sample).
+    // =========================================================================
+    wire signed [7:0] tap_sample [0:119];
+
+    genvar g;
+    generate
+        for (g = 0; g < 120; g = g + 1) begin : tap_map
+            if (g % 3 == 0) begin : sub2
+                if (g == 0) begin : newest
+                    assign tap_sample[g] = x_in;
+                end else begin : delayed
+                    assign tap_sample[g] = sr2[g/3 - 1];
+                end
+            end else if (g % 3 == 1) begin : sub1
+                assign tap_sample[g] = sr1[g/3];
+            end else begin : sub0
+                assign tap_sample[g] = sr0[g/3];
+            end
+        end
+    endgenerate
+
+    // =========================================================================
+    // Symmetric Pre-Sums (combinational)
+    //   pre_sum[k] = tap_sample[k] + tap_sample[119-k]  for k = 0..59
+    // =========================================================================
+    wire signed [8:0] pre_sum [0:59];
+
+    generate
+        for (g = 0; g < 60; g = g + 1) begin : sym_add
+            assign pre_sum[g] = tap_sample[g] + tap_sample[119 - g];
+        end
+    endgenerate
+
+    // =========================================================================
+    // Registered Symmetric Pre-Sums (captured at end of phase 2)
+    // =========================================================================
+    reg signed [8:0] sym_sum [0:59];
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (i = 0; i < 8; i = i + 1)
+            for (i = 0; i < 60; i = i + 1)
                 sym_sum[i] <= 9'sd0;
-        end else if (phase) begin
-            // Capture symmetric sums at end of phase 1
-            // Note: x_in has x_o[n], x_odd[k] has x_o[n-1-k], x_even[k] has x_e[n-k]
-            sym_sum[0] <= x_in + x_even[7];      // x_o[n] + x_e[n-7]
-            sym_sum[1] <= x_even[0] + x_odd[6];  // x_e[n] + x_o[n-7]
-            sym_sum[2] <= x_odd[0] + x_even[6];  // x_o[n-1] + x_e[n-6]
-            sym_sum[3] <= x_even[1] + x_odd[5];  // x_e[n-1] + x_o[n-6]
-            sym_sum[4] <= x_odd[1] + x_even[5];  // x_o[n-2] + x_e[n-5]
-            sym_sum[5] <= x_even[2] + x_odd[4];  // x_e[n-2] + x_o[n-5]
-            sym_sum[6] <= x_odd[2] + x_even[4];  // x_o[n-3] + x_e[n-4]
-            sym_sum[7] <= x_even[3] + x_odd[3];  // x_e[n-3] + x_o[n-4]
+        end else if (phase == 2'd2) begin
+            for (i = 0; i < 60; i = i + 1)
+                sym_sum[i] <= pre_sum[i];
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Coefficient and Sample Multiplexing for 4 Shared Multipliers
-    // Phase 0: Use H0, H2, H4, H6 with sym_sum[0,2,4,6]
-    // Phase 1: Use H1, H3, H5, H7 with sym_sum[1,3,5,7]
-    // -------------------------------------------------------------------------
-    wire signed [7:0] coef0, coef1, coef2, coef3;
-    wire signed [8:0] samp0, samp1, samp2, samp3;
+    // =========================================================================
+    // 20 Time-Multiplexed Multipliers
+    //   Phase 0: coeff indices 0, 3, 6, ..., 57
+    //   Phase 1: coeff indices 1, 4, 7, ..., 58
+    //   Phase 2: coeff indices 2, 5, 8, ..., 59
+    // =========================================================================
+    wire signed [16:0] mul_prod [0:19];
 
-    assign coef0 = phase ? H1 : H0;
-    assign coef1 = phase ? H3 : H2;
-    assign coef2 = phase ? H5 : H4;
-    assign coef3 = phase ? H7 : H6;
+    generate
+        for (g = 0; g < 20; g = g + 1) begin : mul_gen
+            wire signed [7:0] c0, c1, c2;
+            assign c0 = COEFF[(3*g  )*8 +: 8];
+            assign c1 = COEFF[(3*g+1)*8 +: 8];
+            assign c2 = COEFF[(3*g+2)*8 +: 8];
 
-    assign samp0 = phase ? sym_sum[1] : sym_sum[0];
-    assign samp1 = phase ? sym_sum[3] : sym_sum[2];
-    assign samp2 = phase ? sym_sum[5] : sym_sum[4];
-    assign samp3 = phase ? sym_sum[7] : sym_sum[6];
+            wire signed [7:0] m_coeff;
+            assign m_coeff = (phase == 2'd0) ? c0 :
+                             (phase == 2'd1) ? c1 : c2;
 
-    // -------------------------------------------------------------------------
-    // 4 Shared Multipliers (8-bit coef × 9-bit sum = 17-bit product)
-    // -------------------------------------------------------------------------
-    wire signed [16:0] prod0, prod1, prod2, prod3;
+            wire signed [8:0] m_samp;
+            assign m_samp = (phase == 2'd0) ? sym_sum[3*g]   :
+                            (phase == 2'd1) ? sym_sum[3*g+1] : sym_sum[3*g+2];
 
-    assign prod0 = coef0 * samp0;
-    assign prod1 = coef1 * samp1;
-    assign prod2 = coef2 * samp2;
-    assign prod3 = coef3 * samp3;
+            assign mul_prod[g] = m_coeff * m_samp;
+        end
+    endgenerate
 
-    // -------------------------------------------------------------------------
-    // Sum of 4 Products
-    // -------------------------------------------------------------------------
-    wire signed [18:0] four_sum;
+    // =========================================================================
+    // Sum of 20 Products
+    // =========================================================================
+    integer j;
+    reg signed [22:0] phase_sum;
 
-    assign four_sum = prod0 + prod1 + prod2 + prod3;
+    always @(*) begin
+        phase_sum = 23'sd0;
+        for (j = 0; j < 20; j = j + 1)
+            phase_sum = phase_sum + mul_prod[j];
+    end
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Accumulation and Output
-    // Phase 0: Store partial sum (4 products)
-    // Phase 1: Output complete sum (8 products total)
-    // -------------------------------------------------------------------------
+    //   Phase 0: Start accumulator with first 20 products
+    //   Phase 1: Add next 20 products
+    //   Phase 2: Output total (60 products), also captures new sym_sum
+    // =========================================================================
+    reg signed [22:0] accum;
+
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            partial_sum <= 19'sd0;
-            y_out <= 20'sd0;
+            accum <= 23'sd0;
+            y_out <= 23'sd0;
         end else begin
-            if (!phase) begin
-                // End of phase 0: store first 4 products
-                partial_sum <= four_sum;
-            end else begin
-                // End of phase 1: output sum of all 8 products
-                y_out <= partial_sum + four_sum;
-            end
+            case (phase)
+                2'd0: accum <= phase_sum;
+                2'd1: accum <= accum + phase_sum;
+                2'd2: y_out <= accum + phase_sum;
+                default: ;
+            endcase
         end
     end
 
